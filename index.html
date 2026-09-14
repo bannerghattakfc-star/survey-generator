@@ -56,14 +56,11 @@
         const BASE_SURVEY_URL = "https://customer.kfc-listens.com/jfe/form/SV_8bHC0noyvM3jPWC";
         const CHAMP_ID = "91KDIPL551-01";
 
+        // Precise Date Formatter (Prevents GMT/UTC time-shift errors)
         function formatExcelDate(val) {
             if (!val) return '2026-09-02';
-            if (val instanceof Date) {
-                const year = val.getFullYear();
-                const month = String(val.getMonth() + 1).padStart(2, '0');
-                const day = String(val.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
-            }
+
+            // Excel numeric serial (e.g. 46279)
             if (typeof val === 'number') {
                 const dateObj = XLSX.SSF.parse_date_code(val);
                 const year = dateObj.y;
@@ -71,27 +68,38 @@
                 const day = String(dateObj.d).padStart(2, '0');
                 return `${year}-${month}-${day}`;
             }
-            const strVal = String(val).trim();
-            if (strVal.includes('GMT') || strVal.includes('Standard Time')) {
-                const parsedDate = new Date(strVal);
-                if (!isNaN(parsedDate.getTime())) {
-                    const year = parsedDate.getFullYear();
-                    const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
-                    const day = String(parsedDate.getDate()).padStart(2, '0');
-                    return `${year}-${month}-${day}`;
-                }
+
+            // JavaScript Date Object
+            if (val instanceof Date) {
+                const year = val.getFullYear();
+                const month = String(val.getMonth() + 1).padStart(2, '0');
+                const day = String(val.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
             }
-            return strVal.split('T')[0];
+
+            const strVal = String(val).trim();
+
+            // Handles standard DD/MM/YYYY or DD-MM-YYYY formats directly
+            if (strVal.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/)) {
+                const parts = strVal.split(/[\/\-]/);
+                let day = parts[0].padStart(2, '0');
+                let month = parts[1].padStart(2, '0');
+                let year = parts[2];
+                if (year.length === 2) year = '20' + year;
+                return `${year}-${month}-${day}`;
+            }
+
+            // Handles YYYY-MM-DD or string timestamps
+            if (strVal.includes('T')) return strVal.split('T')[0];
+            if (strVal.includes(' ')) return strVal.split(' ')[0];
+
+            return strVal;
         }
 
+        // Clean Time Formatter
         function formatExcelTime(val) {
             if (val === undefined || val === null || val === '') return '14:24:14';
-            if (val instanceof Date) {
-                const hours = String(val.getHours()).padStart(2, '0');
-                const minutes = String(val.getMinutes()).padStart(2, '0');
-                const seconds = String(val.getSeconds()).padStart(2, '0');
-                return `${hours}:${minutes}:${seconds}`;
-            }
+            
             if (typeof val === 'number') {
                 const totalSeconds = Math.round(val * 86400);
                 const hours = String(Math.floor(totalSeconds / 3600) % 24).padStart(2, '0');
@@ -99,17 +107,21 @@
                 const seconds = String(totalSeconds % 60).padStart(2, '0');
                 return `${hours}:${minutes}:${seconds}`;
             }
-            let strVal = String(val).trim();
-            if (strVal.includes('GMT') || strVal.includes('Standard Time')) {
-                const parsedDate = new Date(strVal);
-                if (!isNaN(parsedDate.getTime())) {
-                    const hours = String(parsedDate.getHours()).padStart(2, '0');
-                    const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
-                    const seconds = String(parsedDate.getSeconds()).padStart(2, '0');
-                    return `${hours}:${minutes}:${seconds}`;
-                }
+
+            if (val instanceof Date) {
+                const hours = String(val.getHours()).padStart(2, '0');
+                const minutes = String(val.getMinutes()).padStart(2, '0');
+                const seconds = String(val.getSeconds()).padStart(2, '0');
+                return `${hours}:${minutes}:${seconds}`;
             }
-            return strVal;
+
+            let strVal = String(val).trim();
+            if (strVal.includes('T')) strVal = strVal.split('T')[1] || strVal;
+            if (strVal.includes(' ')) {
+                const parts = strVal.split(' ');
+                strVal = parts.find(p => p.includes(':')) || strVal;
+            }
+            return strVal.split('.')[0];
         }
 
         function getOrderTypeId(salesTypeStr) {
@@ -122,7 +134,6 @@
             return "1";
         }
 
-        // Checks Sell-to Contact No. first as the mobile number field
         function getPhoneFromRow(row) {
             const possibleHeaders = [
                 'Sell-to Contact No.', 'Sell-to Contact No', 'Sell to Contact No.', 'Sell to Contact No',
@@ -136,7 +147,6 @@
             return '';
         }
 
-        // Checks for Customer No.
         function getCustomerNo(row) {
             const possibleHeaders = ['Customer No.', 'Customer No', 'CustomerNo', 'Customer_No', 'Cust No'];
             for (let header of possibleHeaders) {
@@ -156,9 +166,10 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: true });
+                // raw: true prevents auto timezone conversions on dates
+                const workbook = XLSX.read(data, { type: 'array', raw: true });
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-                const rows = XLSX.utils.sheet_to_json(firstSheet);
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { raw: true });
 
                 generateLinks(rows);
             };
@@ -172,16 +183,14 @@
             data.forEach(row => {
                 const customerNo = getCustomerNo(row);
                 
-                // SKIP generating link if Customer No. is blank/missing
-                if (!customerNo) {
-                    return;
-                }
+                // Skip rows where Customer No. is missing
+                if (!customerNo) return;
 
                 const orderId = String(row['Order ID'] || row['Receipt No.'] || row['Receipt'] || row['Check No'] || '');
                 const rawSalesType = String(row['Sales Type'] || row['Order Type'] || row['SalesType'] || 'Dine-In');
                 const orderTypeId = getOrderTypeId(rawSalesType);
 
-                const dateStr = formatExcelDate(row['Date'] || row['Order Date'] || row['Business Date']);
+                const dateStr = formatExcelDate(row['Date'] || row['Order Date'] || row['Business Date'] || row['Posting Date']);
                 const timeStr = formatExcelTime(row['Time'] || row['Order Time'] || row['Check Time']);
                 const phoneStr = getPhoneFromRow(row);
                 const surveyModel = String(row['Survey Model'] || '6.0');
