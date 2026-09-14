@@ -38,10 +38,10 @@
         <thead>
             <tr>
                 <th>Order ID (Receipt)</th>
+                <th>Sales Type</th>
                 <th>Date</th>
                 <th>Time</th>
                 <th>Phone</th>
-                <th>Order Type</th>
                 <th>Generated Survey Link</th>
                 <th>Action</th>
             </tr>
@@ -54,6 +54,19 @@
     <script>
         const BASE_SURVEY_URL = "https://customer.kfc-listens.com/jfe/form/SV_8bHC0noyvM3jPWC";
         const CHAMP_ID = "91KDIPL551-01";
+
+        // Map Sales Type text to KFC's numeric OT parameters
+        function getOrderTypeId(salesTypeStr) {
+            const cleanStr = String(salesTypeStr || '').trim().toLowerCase();
+            if (cleanStr.includes('dine')) return "1";
+            if (cleanStr.includes('take') || cleanStr.includes('carry')) return "2";
+            if (cleanStr.includes('deliv')) return "3";
+            if (cleanStr.includes('drive')) return "4";
+            
+            // Return number directly if provided as numeric in Excel
+            if (!isNaN(cleanStr) && cleanStr !== '') return cleanStr;
+            return "1"; // Default fall-back to Dine-In
+        }
 
         document.getElementById('excelFile').addEventListener('change', handleFile, false);
 
@@ -79,15 +92,18 @@
 
             data.forEach(row => {
                 const orderId = String(row['Order ID'] || row['Receipt No.'] || row['Receipt'] || '');
+                const rawSalesType = String(row['Sales Type'] || row['Order Type'] || 'Dine-In');
+                const orderTypeId = getOrderTypeId(rawSalesType);
+
                 const dateStr = String(row['Date'] || '2026-09-02');
                 const timeStr = String(row['Time'] || '14:24:14');
                 const phoneStr = String(row['Phone'] || '');
-                const orderType = String(row['Order Type'] || '1');
                 const surveyModel = String(row['Survey Model'] || '6.0');
 
                 const dtmStr = `${dateStr}T${timeStr}.000Z`;
                 const tmFormatted = `${timeStr}.000`;
 
+                // Build payload object according to KFC listens format
                 const payload = {
                     "S": CHAMP_ID,
                     "OI": orderId,
@@ -95,7 +111,7 @@
                     "TM": tmFormatted,
                     "DTM": dtmStr,
                     "TI": "",
-                    "OT": orderType,
+                    "OT": orderTypeId,
                     "SM": surveyModel,
                     "PH": phoneStr
                 };
@@ -106,10 +122,10 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>${orderId}</td>
+                    <td>${rawSalesType} (OT: ${orderTypeId})</td>
                     <td>${dateStr}</td>
                     <td>${timeStr}</td>
                     <td>${phoneStr}</td>
-                    <td>${orderType}</td>
                     <td><a href="${finalSurveyUrl}" target="_blank">Survey Link</a></td>
                     <td><button onclick="navigator.clipboard.writeText('${finalSurveyUrl}')">Copy Link</button></td>
                 `;
