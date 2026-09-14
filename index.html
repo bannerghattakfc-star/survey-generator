@@ -37,11 +37,12 @@
     <table id="outputTable">
         <thead>
             <tr>
+                <th>Customer No.</th>
                 <th>Order ID (Receipt)</th>
                 <th>Sales Type</th>
                 <th>Date</th>
                 <th>Time</th>
-                <th>Phone</th>
+                <th>Phone (Sell-to Contact No.)</th>
                 <th>Generated Survey Link</th>
                 <th>Action</th>
             </tr>
@@ -55,19 +56,14 @@
         const BASE_SURVEY_URL = "https://customer.kfc-listens.com/jfe/form/SV_8bHC0noyvM3jPWC";
         const CHAMP_ID = "91KDIPL551-01";
 
-        // Converts Excel dates/JS Date objects to clean YYYY-MM-DD
         function formatExcelDate(val) {
             if (!val) return '2026-09-02';
-            
-            // If it's a JS Date object
             if (val instanceof Date) {
                 const year = val.getFullYear();
                 const month = String(val.getMonth() + 1).padStart(2, '0');
                 const day = String(val.getDate()).padStart(2, '0');
                 return `${year}-${month}-${day}`;
             }
-            
-            // If it's an Excel numeric date code (e.g. 46279)
             if (typeof val === 'number') {
                 const dateObj = XLSX.SSF.parse_date_code(val);
                 const year = dateObj.y;
@@ -75,8 +71,6 @@
                 const day = String(dateObj.d).padStart(2, '0');
                 return `${year}-${month}-${day}`;
             }
-
-            // If it's a date string, extract YYYY-MM-DD or clean string
             const strVal = String(val).trim();
             if (strVal.includes('GMT') || strVal.includes('Standard Time')) {
                 const parsedDate = new Date(strVal);
@@ -90,19 +84,14 @@
             return strVal.split('T')[0];
         }
 
-        // Converts Excel time decimals or JS Date objects to clean HH:MM:SS
         function formatExcelTime(val) {
             if (val === undefined || val === null || val === '') return '14:24:14';
-            
-            // If JS Date object
             if (val instanceof Date) {
                 const hours = String(val.getHours()).padStart(2, '0');
                 const minutes = String(val.getMinutes()).padStart(2, '0');
                 const seconds = String(val.getSeconds()).padStart(2, '0');
                 return `${hours}:${minutes}:${seconds}`;
             }
-
-            // If Excel decimal time
             if (typeof val === 'number') {
                 const totalSeconds = Math.round(val * 86400);
                 const hours = String(Math.floor(totalSeconds / 3600) % 24).padStart(2, '0');
@@ -110,8 +99,6 @@
                 const seconds = String(totalSeconds % 60).padStart(2, '0');
                 return `${hours}:${minutes}:${seconds}`;
             }
-
-            // Clean string time
             let strVal = String(val).trim();
             if (strVal.includes('GMT') || strVal.includes('Standard Time')) {
                 const parsedDate = new Date(strVal);
@@ -135,12 +122,23 @@
             return "1";
         }
 
-        // Flexible lookup for Phone column header names
+        // Checks Sell-to Contact No. first as the mobile number field
         function getPhoneFromRow(row) {
             const possibleHeaders = [
-                'Phone', 'Phone Number', 'PhoneNo', 'Phone No', 'Phone_Number',
-                'Mobile', 'Mobile Number', 'MobileNo', 'Customer Phone', 'Customer Mobile', 'PH', 'Contact'
+                'Sell-to Contact No.', 'Sell-to Contact No', 'Sell to Contact No.', 'Sell to Contact No',
+                'Phone', 'Phone Number', 'PhoneNo', 'Phone No', 'Mobile', 'Mobile Number', 'Customer Phone', 'PH'
             ];
+            for (let header of possibleHeaders) {
+                if (row[header] !== undefined && row[header] !== null && String(row[header]).trim() !== '') {
+                    return String(row[header]).trim();
+                }
+            }
+            return '';
+        }
+
+        // Checks for Customer No.
+        function getCustomerNo(row) {
+            const possibleHeaders = ['Customer No.', 'Customer No', 'CustomerNo', 'Customer_No', 'Cust No'];
             for (let header of possibleHeaders) {
                 if (row[header] !== undefined && row[header] !== null && String(row[header]).trim() !== '') {
                     return String(row[header]).trim();
@@ -172,11 +170,17 @@
             tbody.innerHTML = '';
 
             data.forEach(row => {
+                const customerNo = getCustomerNo(row);
+                
+                // SKIP generating link if Customer No. is blank/missing
+                if (!customerNo) {
+                    return;
+                }
+
                 const orderId = String(row['Order ID'] || row['Receipt No.'] || row['Receipt'] || row['Check No'] || '');
                 const rawSalesType = String(row['Sales Type'] || row['Order Type'] || row['SalesType'] || 'Dine-In');
                 const orderTypeId = getOrderTypeId(rawSalesType);
 
-                // Clean Date & Time
                 const dateStr = formatExcelDate(row['Date'] || row['Order Date'] || row['Business Date']);
                 const timeStr = formatExcelTime(row['Time'] || row['Order Time'] || row['Check Time']);
                 const phoneStr = getPhoneFromRow(row);
@@ -202,6 +206,7 @@
 
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
+                    <td>${customerNo}</td>
                     <td>${orderId}</td>
                     <td>${rawSalesType} (OT: ${orderTypeId})</td>
                     <td>${dateStr}</td>
