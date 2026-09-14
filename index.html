@@ -27,6 +27,7 @@
         <h2>KFC Bannerghatta Road</h2>
         <p><strong>Champ ID:</strong> 91KDIPL551-01</p>
         <p><strong>Store SAP Code:</strong> K243</p>
+        <p><strong>RGM:</strong> Ain Uddin T</p>
     </div>
 
     <div class="upload-section">
@@ -56,11 +57,10 @@
         const BASE_SURVEY_URL = "https://customer.kfc-listens.com/jfe/form/SV_8bHC0noyvM3jPWC";
         const CHAMP_ID = "91KDIPL551-01";
 
-        // Precise Date Formatter (Prevents GMT/UTC time-shift errors)
+        // Precise Date Formatter
         function formatExcelDate(val) {
             if (!val) return '2026-09-02';
 
-            // Excel numeric serial (e.g. 46279)
             if (typeof val === 'number') {
                 const dateObj = XLSX.SSF.parse_date_code(val);
                 const year = dateObj.y;
@@ -69,7 +69,6 @@
                 return `${year}-${month}-${day}`;
             }
 
-            // JavaScript Date Object
             if (val instanceof Date) {
                 const year = val.getFullYear();
                 const month = String(val.getMonth() + 1).padStart(2, '0');
@@ -79,7 +78,6 @@
 
             const strVal = String(val).trim();
 
-            // Handles standard DD/MM/YYYY or DD-MM-YYYY formats directly
             if (strVal.match(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/)) {
                 const parts = strVal.split(/[\/\-]/);
                 let day = parts[0].padStart(2, '0');
@@ -89,7 +87,6 @@
                 return `${year}-${month}-${day}`;
             }
 
-            // Handles YYYY-MM-DD or string timestamps
             if (strVal.includes('T')) return strVal.split('T')[0];
             if (strVal.includes(' ')) return strVal.split(' ')[0];
 
@@ -166,7 +163,6 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const data = new Uint8Array(event.target.result);
-                // raw: true prevents auto timezone conversions on dates
                 const workbook = XLSX.read(data, { type: 'array', raw: true });
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                 const rows = XLSX.utils.sheet_to_json(firstSheet, { raw: true });
