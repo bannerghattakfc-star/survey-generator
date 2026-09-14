@@ -55,17 +55,40 @@
         const BASE_SURVEY_URL = "https://customer.kfc-listens.com/jfe/form/SV_8bHC0noyvM3jPWC";
         const CHAMP_ID = "91KDIPL551-01";
 
-        // Map Sales Type text to KFC's numeric OT parameters
+        // Converts Excel Date serial numbers (e.g. 46279) to YYYY-MM-DD
+        function formatExcelDate(excelDate) {
+            if (!excelDate) return '2026-09-02';
+            if (typeof excelDate === 'number') {
+                const dateObj = XLSX.SSF.parse_date_code(excelDate);
+                const year = dateObj.y;
+                const month = String(dateObj.m).padStart(2, '0');
+                const day = String(dateObj.d).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+            return String(excelDate).trim();
+        }
+
+        // Converts Excel Time decimals (e.g. 0.524537) to HH:MM:SS
+        function formatExcelTime(excelTime) {
+            if (excelTime === undefined || excelTime === null) return '14:24:14';
+            if (typeof excelTime === 'number') {
+                const totalSeconds = Math.round(excelTime * 86400);
+                const hours = String(Math.floor(totalSeconds / 3600)).padStart(2, '0');
+                const minutes = String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0');
+                const seconds = String(totalSeconds % 60).padStart(2, '0');
+                return `${hours}:${minutes}:${seconds}`;
+            }
+            return String(excelTime).trim();
+        }
+
         function getOrderTypeId(salesTypeStr) {
             const cleanStr = String(salesTypeStr || '').trim().toLowerCase();
             if (cleanStr.includes('dine')) return "1";
             if (cleanStr.includes('take') || cleanStr.includes('carry')) return "2";
             if (cleanStr.includes('deliv')) return "3";
             if (cleanStr.includes('drive')) return "4";
-            
-            // Return number directly if provided as numeric in Excel
             if (!isNaN(cleanStr) && cleanStr !== '') return cleanStr;
-            return "1"; // Default fall-back to Dine-In
+            return "1";
         }
 
         document.getElementById('excelFile').addEventListener('change', handleFile, false);
@@ -77,7 +100,8 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const data = new Uint8Array(event.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
+                // raw: false ensures formatting parameters pass correctly
+                const workbook = XLSX.read(data, { type: 'array', cellDates: true, raw: true });
                 const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
                 const rows = XLSX.utils.sheet_to_json(firstSheet);
 
@@ -95,15 +119,15 @@
                 const rawSalesType = String(row['Sales Type'] || row['Order Type'] || 'Dine-In');
                 const orderTypeId = getOrderTypeId(rawSalesType);
 
-                const dateStr = String(row['Date'] || '2026-09-02');
-                const timeStr = String(row['Time'] || '14:24:14');
+                // Process Date & Time formatted correctly
+                const dateStr = formatExcelDate(row['Date']);
+                const timeStr = formatExcelTime(row['Time']);
                 const phoneStr = String(row['Phone'] || '');
                 const surveyModel = String(row['Survey Model'] || '6.0');
 
                 const dtmStr = `${dateStr}T${timeStr}.000Z`;
                 const tmFormatted = `${timeStr}.000`;
 
-                // Build payload object according to KFC listens format
                 const payload = {
                     "S": CHAMP_ID,
                     "OI": orderId,
